@@ -73,6 +73,7 @@ def run_onestage_deltanmf(
     rel_alpha = 0.0, 
     max_iter = 10000, 
     batchsize = 5506, 
+    warmup_n_runs = 20,
     FM_LAST_ITERS = 200,
     FM_NONNEG = "softplus", FM_SOFTPLUS_BETA = 5.0, lr = 0.01,
     use_minibatch_ntc = False, minibatch_size_ntc = 40960,
@@ -86,33 +87,30 @@ def run_onestage_deltanmf(
     if use_fm is None:
         use_fm = bool(rel_alpha > 0)
 
+    remove_genes_list = (REMOVE_GENES if len(REMOVE_GENES) > 0 else None)
+
     if use_fm:
         if S_E_PATH is None or S_E_GENES_PATH is None:
             raise ValueError("S_E_PATH and S_E_GENES_PATH are required when use_fm=True")
-        X_ntc, S_E_aligned = preprocessing.load_data_onestage(
+        X_ntc, S_E_aligned, aligned_gene_names = preprocessing.load_data_onestage(
             X_control, gene_names, S_E_PATH, S_E_GENES_PATH,
             min_cells=MIN_CELLS,
-            additional_genes_to_remove=(REMOVE_GENES if len(REMOVE_GENES) > 0 else None),
+            additional_genes_to_remove=remove_genes_list,
             verbose=False
         )
     else:
-        gene_names_arr = np.asarray(gene_names)
-        if MIN_CELLS > 0:
-            gene_cell_counts = (X_control > 0).sum(axis=1)
-            mask = gene_cell_counts >= MIN_CELLS
-        else:
-            mask = np.ones(gene_names_arr.shape[0], dtype=bool)
-
-        if REMOVE_GENES:
-            mask &= ~np.isin(gene_names_arr, REMOVE_GENES)
-
-        X_ntc = X_control[mask, :]
+        X_ntc, aligned_gene_names = preprocessing.load_data_onestage_no_se(
+            X_control, gene_names,
+            min_cells=MIN_CELLS,
+            additional_genes_to_remove=remove_genes_list,
+            verbose=False
+        )
         S_E_aligned = None
 
     X_ntc = pipeline_utils.apply_normalization(X_ntc, USE_TPM, USE_MEDIAN, USE_UNITVAR, TPM_TARGET).astype(np.float32, copy=False)
 
     W_cons, H_cons, info = nmf_torch.consensus_nmf_gpu(
-        X_ntc, k=K, n_runs=20, epochs=100, batch_size=batchsize, use_gpu=True,
+        X_ntc, k=K, n_runs=warmup_n_runs, epochs=100, batch_size=batchsize, use_gpu=True,
         seed=BASE_SEED, verbose=True, gene_names=None, cell_names=None,
         consensus_mode="median", density_threshold_quantile=0.95, local_neighborhood_size=0.30
     )
@@ -147,9 +145,13 @@ def run_onestage_deltanmf(
         ntc_kwargs["batch_size"] = int(minibatch_size_ntc)
     W_ntc, H_ntc, loss_fm = ntc_solver(**ntc_kwargs)
 
+    control_cell_ids = np.asarray([f"control_cell_{i}" for i in range(X_ntc.shape[1])], dtype=object)
+
     return {
         "W": W_ntc,
         "H": H_ntc,
+        "gene_names_aligned": aligned_gene_names,
+        "control_cell_ids": control_cell_ids,
     }
 
 
@@ -160,14 +162,17 @@ def run_twostage_deltanmf(
     stage1_rel_alpha = 0.0, stage2_rel_alpha = 0.0, stage2_rel_gamma = 0.0,
     stage1_max_iter = 10000, stage2_max_iter = 10000,
     stage1_batchsize = 5506, stage2_batchsize = 40960, 
+    stage1_warmup_n_runs = 20, stage2_warmup_n_runs = 20,
     FM_LAST_ITERS = 200,
     FM_NONNEG = "softplus", FM_SOFTPLUS_BETA = 5.0, lr = 0.01,
     stage1_use_minibatch_ntc = False, stage1_minibatch_size_ntc = 40960,
+    stage2_use_hybrid_memory = False,
     BASE_SEED = 1337):
-    X_ntc, X_spec, S_E_aligned = preprocessing.load_data_twostage(
+    remove_genes_list = (REMOVE_GENES if len(REMOVE_GENES) > 0 else None)
+    X_ntc, X_spec, S_E_aligned, aligned_gene_names = preprocessing.load_data_twostage(
         X_control, X_case, gene_names, S_E_PATH, S_E_GENES_PATH,
         min_cells=MIN_CELLS,
-        additional_genes_to_remove=(REMOVE_GENES if len(REMOVE_GENES) > 0 else None),
+        additional_genes_to_remove=remove_genes_list,
         verbose=False
     )
 
@@ -176,7 +181,7 @@ def run_twostage_deltanmf(
 
 
     W_cons, H_cons, info = nmf_torch.consensus_nmf_gpu(
-        X_ntc, k=K_stage1, n_runs=20, epochs=100, batch_size=stage1_batchsize, use_gpu=True,
+        X_ntc, k=K_stage1, n_runs=stage1_warmup_n_runs, epochs=100, batch_size=stage1_batchsize, use_gpu=True,
         seed=BASE_SEED, verbose=True, gene_names=None, cell_names=None,
         consensus_mode="median", density_threshold_quantile=0.95, local_neighborhood_size=0.30
     )
@@ -212,7 +217,7 @@ def run_twostage_deltanmf(
     R = np.maximum(0.0, X_spec - (W_ntc @ H_n_spec))
 
     W_tc_init, H_tc_init, info_tc = nmf_torch.consensus_nmf_gpu(
-        R, k=K_stage2, n_runs=20, epochs=100, batch_size=stage2_batchsize,
+        R, k=K_stage2, n_runs=stage2_warmup_n_runs, epochs=100, batch_size=stage2_batchsize,
         use_gpu=True, seed=BASE_SEED + 17, verbose=True, gene_names=None, cell_names=None,
         consensus_mode="median", density_threshold_quantile=0.95, local_neighborhood_size=0.30
     )
@@ -244,7 +249,8 @@ def run_twostage_deltanmf(
     )
 
     # fit W_specific on full X_spec with W_ntc fixed
-    W_spec_final, H_spec_final, loss_df = models.solve_specific_with_fixed_ntc(
+    stage2_solver = models.solve_specific_with_fixed_ntc_hybrid if stage2_use_hybrid_memory else models.solve_specific_with_fixed_ntc
+    W_spec_final, H_spec_final, loss_df = stage2_solver(
         X_specific=X_spec,
         W_ntc=W_ntc_bal,
         k_specific=K_stage2,
@@ -260,10 +266,15 @@ def run_twostage_deltanmf(
         nonneg=FM_NONNEG,
         softplus_beta=FM_SOFTPLUS_BETA
     )
+    ntc_cell_ids = np.asarray([f"ntc_cell_{i}" for i in range(X_ntc.shape[1])], dtype=object)
+    specific_cell_ids = np.asarray([f"specific_cell_{i}" for i in range(X_spec.shape[1])], dtype=object)
 
     return {
         "W_stage1": W_ntc,
         "H_stage1": H_ntc,
         "W_stage2": W_spec_final,
         "H_stage2": H_spec_final,
+        "gene_names_aligned": aligned_gene_names,
+        "ntc_cell_ids": ntc_cell_ids,
+        "specific_cell_ids": specific_cell_ids,
     }

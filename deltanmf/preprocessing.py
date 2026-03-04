@@ -45,22 +45,53 @@ def load_from_h5ad(h5ad_path, s_e_path, s_e_genes_path, control_key='target_gene
     return X_ntc_aligned, X_specific_aligned, S_E_aligned, common_genes
 
 
-def load_data_onestage(X, gene_names, s_e_path, s_e_genes_path, min_cells=215, additional_genes_to_remove=None, verbose=False):
-    hvg_gene_names_full = gene_names
-
-    if min_cells > 0:
-        gene_cell_counts = (X > 0).sum(axis=1)
-        mask = gene_cell_counts >= min_cells
+def _build_gene_filter_mask(X_ntc, gene_names_full, min_cells=215, additional_genes_to_remove=None, X_specific=None):
+    gene_names_full = np.asarray(gene_names_full)
+    if X_specific is None:
+        if min_cells > 0:
+            gene_cell_counts = (X_ntc > 0).sum(axis=1)
+            mask = gene_cell_counts >= min_cells
+        else:
+            mask = np.ones(len(gene_names_full), dtype=bool)
     else:
-        mask = np.ones(len(hvg_gene_names_full), dtype=bool)
+        if min_cells > 0:
+            gene_cell_counts = (X_ntc > 0).sum(axis=1) + (X_specific > 0).sum(axis=1)
+            mask = gene_cell_counts >= min_cells
+        else:
+            mask = np.ones(len(gene_names_full), dtype=bool)
 
     if additional_genes_to_remove:
-        remove = np.isin(hvg_gene_names_full, additional_genes_to_remove)
+        remove = np.isin(gene_names_full, additional_genes_to_remove)
         mask &= ~remove
-    
-    if mask.dtype != bool or mask.shape[0] != hvg_gene_names_full.shape[0]:
+
+    if mask.dtype != bool or mask.shape[0] != gene_names_full.shape[0]:
         raise ValueError(f"Mask shape/type mismatch: mask {mask.shape} bool? {mask.dtype==bool}, "
-                         f"genes {hvg_gene_names_full.shape}")
+                         f"genes {gene_names_full.shape}")
+    return mask
+
+def load_data_onestage_no_se(X, gene_names, min_cells=215, additional_genes_to_remove=None, verbose=False):
+    hvg_gene_names_full = np.asarray(gene_names)
+    mask = _build_gene_filter_mask(
+        X_ntc=X,
+        gene_names_full=hvg_gene_names_full,
+        min_cells=min_cells,
+        additional_genes_to_remove=additional_genes_to_remove,
+        X_specific=None,
+    )
+
+    X_aligned = X[mask, :]
+    final_genes = hvg_gene_names_full[mask].astype(object, copy=False)
+    return X_aligned, final_genes
+
+def load_data_onestage(X, gene_names, s_e_path, s_e_genes_path, min_cells=215, additional_genes_to_remove=None, verbose=False):
+    hvg_gene_names_full = np.asarray(gene_names)
+    mask = _build_gene_filter_mask(
+        X_ntc=X,
+        gene_names_full=hvg_gene_names_full,
+        min_cells=min_cells,
+        additional_genes_to_remove=additional_genes_to_remove,
+        X_specific=None,
+    )
 
     # apply mask once to keep everything aligned
     X_aligned = X[mask, :]
@@ -91,26 +122,19 @@ def load_data_onestage(X, gene_names, s_e_path, s_e_genes_path, min_cells=215, a
     X_aligned = X[x_indices, :]
     S_E_aligned = S_E_full[np.ix_(se_indices, se_indices)]
     
-    return X_aligned, S_E_aligned
+    return X_aligned, S_E_aligned, np.asarray(final_genes, dtype=object)
     
 def load_data_twostage(X_control, X_case, gene_names, s_e_path, s_e_genes_path, min_cells=215, additional_genes_to_remove=None, verbose=False):
     X_ntc_full = X_control
     X_specific_full = X_case
-    hvg_gene_names_full = gene_names
-
-    if min_cells > 0:
-        gene_cell_counts = (X_ntc_full > 0).sum(axis=1) + (X_specific_full > 0).sum(axis=1)
-        mask = gene_cell_counts >= min_cells
-    else:
-        mask = np.ones(len(hvg_gene_names_full), dtype=bool)
-
-    if additional_genes_to_remove:
-        remove = np.isin(hvg_gene_names_full, additional_genes_to_remove)
-        mask &= ~remove
-    
-    if mask.dtype != bool or mask.shape[0] != hvg_gene_names_full.shape[0]:
-        raise ValueError(f"Mask shape/type mismatch: mask {mask.shape} bool? {mask.dtype==bool}, "
-                         f"genes {hvg_gene_names_full.shape}")
+    hvg_gene_names_full = np.asarray(gene_names)
+    mask = _build_gene_filter_mask(
+        X_ntc=X_ntc_full,
+        X_specific=X_specific_full,
+        gene_names_full=hvg_gene_names_full,
+        min_cells=min_cells,
+        additional_genes_to_remove=additional_genes_to_remove,
+    )
 
     # apply mask once to keep everything aligned
     X_ntc = X_ntc_full[mask, :]
@@ -144,7 +168,7 @@ def load_data_twostage(X_control, X_case, gene_names, s_e_path, s_e_genes_path, 
     X_specific_aligned = X_specific[x_indices, :]
     S_E_aligned = S_E_full[np.ix_(se_indices, se_indices)]
     
-    return X_ntc_aligned, X_specific_aligned, S_E_aligned
+    return X_ntc_aligned, X_specific_aligned, S_E_aligned, np.asarray(final_genes, dtype=object)
 
 def normalize_cells_to_median(matrix):
     # normalizes each cell (column) to have the same total count as the median cell

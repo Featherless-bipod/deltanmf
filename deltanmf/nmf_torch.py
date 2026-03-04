@@ -126,7 +126,9 @@ def nmf_gpu_minibatch(
         rel_impr = (last_obj - proxy_obj) / (abs(last_obj) + 1e-12)
         if verbose:
             iterator.set_postfix(proxy_obj=f"{proxy_obj:.4e}", rel_impr=f"{rel_impr:.3e}")
-            
+        if rel_impr < tol:
+            if verbose: print(f"Convergence reached at epoch {epoch}.")
+            break
         last_obj = proxy_obj
 
     W_out = W.detach().cpu().numpy().astype(np.float32)

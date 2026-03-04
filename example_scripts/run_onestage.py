@@ -58,6 +58,10 @@ def main():
 
     np.save(out / "W.npy", res["W"])
     np.save(out / "H.npy", res["H"])
+    np.save(out / "gene_names_aligned.npy", res["gene_names_aligned"])
+    np.savetxt(out / "gene_names_aligned.tsv", res["gene_names_aligned"], fmt="%s")
+    np.save(out / "control_cell_ids.npy", res["control_cell_ids"])
+    np.savetxt(out / "control_cell_ids.tsv", res["control_cell_ids"], fmt="%s")
 
 
 if __name__ == "__main__":

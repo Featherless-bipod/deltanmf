@@ -41,7 +41,7 @@ def solve_W_pi_then_cd(X, H, max_iter_cd=50, tol=1e-8, random_state=0):
 def apply_normalization(X, use_tpm, use_median, use_unitvar, tpm_target):
     if use_tpm and use_median:
         raise ValueError("choose either TPM-like or median normalization")
-    Xp = X.astype(np.float32, copy=True)
+    Xp = X.astype(np.float32, copy=False)
     if use_tpm:
         Xp = preprocessing.cnmf_tpm_like_normalization(Xp, target_sum=tpm_target)
     elif use_median:

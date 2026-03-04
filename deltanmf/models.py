@@ -170,7 +170,7 @@ def solve_ntc_regularized_minibatch(
 ):
     """
     Minibatched variant of solve_ntc_regularized.
-    X is expected to be (genes x cells). Returns (W, H, loss_history_df).
+    X is expected to be (genes x cells). Returns (W, H, loss_history_df)
     """
     if seed is not None:
         import random
@@ -185,8 +185,25 @@ def solve_ntc_regularized_minibatch(
     m, n = X.shape
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Keep X on CPU; move only minibatches to GPU
+    # Hybrid memory strategy:
+    # - Try full X on device for fast on-device slicing.
+    # - Fall back to CPU-resident X with per-batch transfers on OOM.
     X_tensor_cpu = torch.tensor(X, dtype=torch.float32)
+    X_tensor = None
+    x_on_device = False
+    if device.type == "cuda":
+        try:
+            X_tensor = X_tensor_cpu.to(device)
+            x_on_device = True
+        except RuntimeError as err:
+            if "out of memory" in str(err).lower():
+                torch.cuda.empty_cache()
+                x_on_device = False
+            else:
+                raise
+    else:
+        X_tensor = X_tensor_cpu
+        x_on_device = True
 
     D_E = np.diag(np.sum(S_E, axis=1)) if S_E is not None else None
 
@@ -229,13 +246,19 @@ def solve_ntc_regularized_minibatch(
         num_batches = 0
         alpha_updated = False
 
-        permutation = torch.randperm(n)
+        permutation = torch.randperm(n, device=device) if x_on_device else torch.randperm(n)
         for start in range(0, n, batch_size):
             optimizer.zero_grad()
 
-            idx_cpu = permutation[start:start + batch_size]
-            X_b = X_tensor_cpu[:, idx_cpu].to(device)
-            idx_dev = idx_cpu.to(device)
+            idx = permutation[start:start + batch_size]
+            if x_on_device:
+                X_b = X_tensor[:, idx]
+                H_idx = idx
+                batch_n = idx.numel()
+            else:
+                X_b = X_tensor_cpu[:, idx].to(device, non_blocking=True)
+                H_idx = idx.to(device, non_blocking=True)
+                batch_n = idx.numel()
 
             W_raw, H_raw = model()
             W_eff = _act(W_raw)
@@ -246,7 +269,7 @@ def solve_ntc_regularized_minibatch(
                 W_eff = W_eff / s
                 H_eff = H_eff * s.squeeze(0).unsqueeze(1)
 
-            H_b = H_eff[:, idx_dev]
+            H_b = H_eff[:, H_idx]
             recon_loss = torch.mean((X_b - W_eff @ H_b) ** 2)
 
             alpha_t = torch.as_tensor(alpha_ntc, dtype=X_b.dtype, device=device)
@@ -263,7 +286,7 @@ def solve_ntc_regularized_minibatch(
             fm_loss = torch.zeros([], dtype=X_b.dtype, device=device)
             if (alpha_ntc > 0) and (L_S_tensor is not None) and (epoch >= fm_start_iter):
                 # Scale by the batch fraction so FM weight matches full-batch objective.
-                batch_frac = float(idx_cpu.numel()) / float(n)
+                batch_frac = float(batch_n) / float(n)
                 fm_loss = alpha_t * torch.trace(W_eff.T @ L_S_tensor @ W_eff) / (m * k)
                 fm_loss = fm_loss * batch_frac
 
@@ -407,6 +430,154 @@ def solve_specific_with_fixed_ntc(
                 ortho_loss = gamma * torch.mean((W_ntc_norm.T @ W_spec_norm)**2)
 
         
+            total_loss = recon_loss + fm_loss + ortho_loss
+            total_loss.backward()
+            optimizer.step()
+
+            epoch_losses['recon_loss'] += float(recon_loss.item())
+            epoch_losses['fm_loss'] += float(fm_loss.item())
+            epoch_losses['ortho_loss'] += float(ortho_loss.item())
+            epoch_losses['total_loss'] += float(total_loss.item())
+            num_batches += 1
+
+        avg_losses = {k: v / max(1, num_batches) for k, v in epoch_losses.items()}
+        avg_losses['epoch'] = int(epoch)
+        loss_history.append(avg_losses)
+        pbar.set_postfix(loss=avg_losses['total_loss'])
+
+        cur = avg_losses['total_loss']
+        if np.abs(prev_loss - cur) < tol * max(prev_loss, 1.0):
+            break
+        prev_loss = cur
+
+    W_final_spec = _act(model.W_spec).detach().cpu().numpy()
+    H_final = _act(model.H).detach().cpu().numpy()
+    return W_final_spec, H_final, pd.DataFrame(loss_history)
+
+def solve_specific_with_fixed_ntc_hybrid(
+    X_specific, W_ntc, k_specific, S_E, hyperparameters,
+    guide_aggregation_map=None, epochs=200, lr_W_specific=0.01,
+    tol=1e-8, batch_size=40960,
+    init_W_specific=None, H_init=None,
+    nonneg="softplus", softplus_beta=5.0
+):
+    """
+    Hybrid-memory variant of solve_specific_with_fixed_ntc.
+    Tries full X_specific on device first, falls back to CPU batch transfers on OOM
+    """
+    m, n_spec = X_specific.shape
+    k_ntc = W_ntc.shape[1]
+
+    D_E = np.diag(np.sum(S_E, axis=1))
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if nonneg.lower() == "relu":
+        def _act(t): return F.relu(t)
+    else:
+        def _act(t): return F.softplus(t, beta=softplus_beta)
+
+    W_ntc_used = W_ntc.copy()
+
+    if init_W_specific is None or H_init is None:
+        raise ValueError("init_W_specific and H_init must be provided for solve_specific_with_fixed_ntc_hybrid")
+
+    # Hybrid memory strategy:
+    # - Try full X_specific on device for fast on-device slicing.
+    # - Fall back to CPU-resident X_specific with per-batch transfers on OOM.
+    X_tensor_cpu = torch.tensor(X_specific, dtype=torch.float32)
+    X_tensor = None
+    x_on_device = False
+    if device.type == "cuda":
+        try:
+            X_tensor = X_tensor_cpu.to(device)
+            x_on_device = True
+        except RuntimeError as err:
+            if "out of memory" in str(err).lower():
+                torch.cuda.empty_cache()
+                x_on_device = False
+            else:
+                raise
+    else:
+        X_tensor = X_tensor_cpu
+        x_on_device = True
+
+    W_ntc_const = torch.tensor(W_ntc_used, dtype=torch.float32, device=device)
+
+    L_S_tensor = None
+    if hyperparameters.get("alpha_fm", 0.0) > 0 and S_E is not None and D_E is not None:
+        L_S_tensor = torch.tensor(D_E - S_E, dtype=torch.float32).to(device)
+
+    guide_agg_map_tensor = None
+    if guide_aggregation_map is not None:
+        M = guide_aggregation_map.tocoo()
+        guide_agg_map_tensor = torch.sparse_coo_tensor(
+            indices=torch.from_numpy(np.vstack((M.row, M.col))),
+            values=torch.from_numpy(M.data),
+            size=M.shape
+        ).to(device, dtype=torch.float32)
+
+    class FixedNTCOptimizer(nn.Module):
+        def __init__(self, W_ntc_fixed, W_spec_init, H_init_full):
+            super().__init__()
+            self.W_ntc_fixed = W_ntc_fixed  # not a Parameter
+            self.W_spec = nn.Parameter(torch.tensor(W_spec_init, dtype=torch.float32))
+            self.H = nn.Parameter(torch.tensor(H_init_full, dtype=torch.float32))
+        def forward(self):
+            W_ntc_nonneg = _act(self.W_ntc_fixed)
+            W_spec_nonneg = _act(self.W_spec)
+            H_nonneg = _act(self.H)
+            W_combined_nonneg = torch.cat([W_ntc_nonneg, W_spec_nonneg], dim=1)
+            return W_combined_nonneg, H_nonneg
+
+    model = FixedNTCOptimizer(W_ntc_const, init_W_specific, H_init).to(device)
+
+    optimizer = optim.Adam([
+        {'params': [model.W_spec], 'lr': lr_W_specific},
+        {'params': [model.H], 'lr': lr_W_specific}
+    ])
+
+    alpha_fm = float(hyperparameters.get("alpha_fm", 0.0))
+    gamma    = float(hyperparameters.get("gamma", 0.0))
+    eps = 1e-12
+
+    loss_history = []
+    prev_loss = np.inf
+    pbar = trange(epochs, desc="Specific-with-Fixed-NTC (hybrid)", leave=False)
+
+    for epoch in pbar:
+        epoch_losses = {k: 0.0 for k in ['recon_loss', 'fm_loss', 'ortho_loss', 'total_loss']}
+        num_batches = 0
+
+        permutation = torch.randperm(n_spec, device=device) if x_on_device else torch.randperm(n_spec)
+        for i in range(0, n_spec, batch_size):
+            optimizer.zero_grad()
+
+            W_combined, H = model()
+            idx = permutation[i:i+batch_size]
+            if x_on_device:
+                X_b = X_tensor[:, idx]
+                H_idx = idx
+            else:
+                X_b = X_tensor_cpu[:, idx].to(device, non_blocking=True)
+                H_idx = idx.to(device, non_blocking=True)
+            H_b = H[:, H_idx]
+
+            recon_loss = torch.mean((X_b - W_combined @ H_b)**2)
+
+            fm_loss = torch.zeros((), dtype=torch.float32, device=device)
+            ortho_loss = torch.zeros((), dtype=torch.float32, device=device)
+
+            if alpha_fm > 0 and L_S_tensor is not None:
+                W_spec_part = W_combined[:, k_ntc:]
+                fm_loss = alpha_fm * torch.trace(W_spec_part.T @ L_S_tensor @ W_spec_part) / (m * k_specific)
+
+            if gamma > 0:
+                W_ntc_part = W_combined[:, :k_ntc]
+                W_spec_part = W_combined[:, k_ntc:]
+                W_ntc_norm = F.normalize(W_ntc_part, p=2, dim=0)
+                W_spec_norm = F.normalize(W_spec_part, p=2, dim=0)
+                ortho_loss = gamma * torch.mean((W_ntc_norm.T @ W_spec_norm)**2)
+
             total_loss = recon_loss + fm_loss + ortho_loss
             total_loss.backward()
             optimizer.step()

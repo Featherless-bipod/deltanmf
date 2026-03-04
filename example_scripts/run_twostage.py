@@ -52,6 +52,12 @@ def main():
     np.save(out / "H_stage1.npy", res["H_stage1"])
     np.save(out / "W_stage2.npy", res["W_stage2"])
     np.save(out / "H_stage2.npy", res["H_stage2"])
+    np.save(out / "gene_names_aligned.npy", res["gene_names_aligned"])
+    np.savetxt(out / "gene_names_aligned.tsv", res["gene_names_aligned"], fmt="%s")
+    np.save(out / "ntc_cell_ids.npy", res["ntc_cell_ids"])
+    np.savetxt(out / "ntc_cell_ids.tsv", res["ntc_cell_ids"], fmt="%s")
+    np.save(out / "specific_cell_ids.npy", res["specific_cell_ids"])
+    np.savetxt(out / "specific_cell_ids.tsv", res["specific_cell_ids"], fmt="%s")
 
 
 if __name__ == "__main__":
