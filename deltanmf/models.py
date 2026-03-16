@@ -8,17 +8,16 @@ import pandas as pd
 from tqdm.auto import trange
 
 class NTCOptimizer(nn.Module):
-    def __init__(self, m, n, k, init_W=None, init_H=None):
+    def __init__(self, m, k, init_W=None):
         super().__init__()
-        if init_W is not None and init_H is not None:
+        if init_W is not None:
             self.W = nn.Parameter(torch.tensor(init_W, dtype=torch.float32))
-            self.H = nn.Parameter(torch.tensor(init_H, dtype=torch.float32))
         else:
             self.W = nn.Parameter(torch.rand(m, k, dtype=torch.float32))
-            self.H = nn.Parameter(torch.rand(k, n, dtype=torch.float32))
 
-    def forward(self):
-        return self.W, self.H
+    def forward(self, H_batch):
+        return self.W, H_batch
+
 
 def solve_ntc_regularized(
     X, k, S_E, 
@@ -64,8 +63,15 @@ def solve_ntc_regularized(
         init_W = W0.cpu().numpy()
         init_H = H0.cpu().numpy()
 
-    model = NTCOptimizer(m, n, k, init_W=init_W, init_H=init_H).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=lr_start)
+    model = NTCOptimizer(m, k, init_W=init_W).to(device)
+    
+    # H is now external
+    if init_H is not None:
+        H_tensor = torch.tensor(init_H, dtype=torch.float32, requires_grad=True, device=device)
+    else:
+        H_tensor = torch.rand(k, n, dtype=torch.float32, requires_grad=True, device=device)
+        
+    optimizer = optim.Adam(list(model.parameters()) + [H_tensor], lr=lr_start)
 
     S_E_tensor = L_S_tensor = None
     if (S_E is not None) and (D_E is not None):
@@ -91,7 +97,7 @@ def solve_ntc_regularized(
     for i in pbar:
         optimizer.zero_grad()
 
-        W_raw, H_raw = model()
+        W_raw, H_raw = model(H_tensor)
         W_eff = _act(W_raw)
         H_eff = _act(H_raw)
 
@@ -144,7 +150,7 @@ def solve_ntc_regularized(
         prev_loss = cur
 
     with torch.no_grad():
-        W_raw, H_raw = model()
+        W_raw, H_raw = model(H_tensor)
         W_eff = _act(W_raw); H_eff = _act(H_raw)
         if normalize_W:
             s = W_eff.sum(dim=0, keepdim=True).clamp_min(eps)
@@ -217,8 +223,21 @@ def solve_ntc_regularized_minibatch(
         init_W = W0.cpu().numpy()
         init_H = H0.cpu().numpy()
 
-    model = NTCOptimizer(m, n, k, init_W=init_W, init_H=init_H).to(device)
+    model = NTCOptimizer(m, k, init_W=init_W).to(device)
+    
+    # H is external. 
+    if init_H is not None:
+        H_tensor_cpu = torch.tensor(init_H, dtype=torch.float32)
+    else:
+        H_tensor_cpu = torch.rand(k, n, dtype=torch.float32)
+
     optimizer = optim.Adam(model.parameters(), lr=lr_start)
+
+    # Global Adam states for H on CPU
+    m_H_cpu = torch.zeros_like(H_tensor_cpu)
+    v_H_cpu = torch.zeros_like(H_tensor_cpu)
+    beta1, beta2 = 0.9, 0.999
+    adam_eps = 1e-8
 
     L_S_tensor = None
     if (S_E is not None) and (D_E is not None):
@@ -260,16 +279,20 @@ def solve_ntc_regularized_minibatch(
                 H_idx = idx.to(device, non_blocking=True)
                 batch_n = idx.numel()
 
-            W_raw, H_raw = model()
+            # Local H Tensor Creation
+            H_b_device = H_tensor_cpu[:, idx].clone().detach().to(device)
+            H_b_device.requires_grad = True
+            
+            W_raw, H_b = model(H_b_device)
             W_eff = _act(W_raw)
-            H_eff = _act(H_raw)
+            H_eff = _act(H_b)
 
             if normalize_W:
                 s = W_eff.sum(dim=0, keepdim=True).clamp_min(eps)
                 W_eff = W_eff / s
                 H_eff = H_eff * s.squeeze(0).unsqueeze(1)
 
-            H_b = H_eff[:, H_idx]
+            H_b = H_eff
             recon_loss = torch.mean((X_b - W_eff @ H_b) ** 2)
 
             alpha_t = torch.as_tensor(alpha_ntc, dtype=X_b.dtype, device=device)
@@ -292,7 +315,26 @@ def solve_ntc_regularized_minibatch(
 
             total_loss = recon_loss + fm_loss
             total_loss.backward()
+            
             optimizer.step()
+
+            # Custom Dense-Sparse Adam Step for H
+            with torch.no_grad():
+                g = H_b_device.grad
+                t = epoch + 1
+                
+                m_b = beta1 * m_H_cpu[:, idx].to(device) + (1 - beta1) * g
+                v_b = beta2 * v_H_cpu[:, idx].to(device) + (1 - beta2) * (g ** 2)
+                
+                m_hat = m_b / (1 - beta1 ** t)
+                v_hat = v_b / (1 - beta2 ** t)
+                
+                H_b_device.sub_(lr_start * m_hat / (torch.sqrt(v_hat) + adam_eps))
+                
+                # Write back to CPU RAM
+                H_tensor_cpu[:, idx] = H_b_device.cpu()
+                m_H_cpu[:, idx] = m_b.cpu()
+                v_H_cpu[:, idx] = v_b.cpu()
 
             epoch_losses["recon_loss"] += float(recon_loss.item())
             epoch_losses["fm_loss"] += float(fm_loss.item())
@@ -319,7 +361,8 @@ def solve_ntc_regularized_minibatch(
         prev_loss = cur
 
     with torch.no_grad():
-        W_raw, H_raw = model()
+        # Evaluate final state using CPU H
+        W_raw, H_raw = model(H_tensor_cpu.to(device))
         W_eff = _act(W_raw)
         H_eff = _act(H_raw)
         if normalize_W:
@@ -373,24 +416,29 @@ def solve_specific_with_fixed_ntc(
         ).to(device, dtype=torch.float32)
 
     class FixedNTCOptimizer(nn.Module):
-        def __init__(self, W_ntc_fixed, W_spec_init, H_init_full):
+        def __init__(self, W_ntc_fixed, W_spec_init):
             super().__init__()
             self.W_ntc_fixed = W_ntc_fixed  # not a Parameter
             self.W_spec = nn.Parameter(torch.tensor(W_spec_init, dtype=torch.float32))
-            self.H = nn.Parameter(torch.tensor(H_init_full, dtype=torch.float32))
-        def forward(self):
+        def forward(self, H_batch):
             W_ntc_nonneg = _act(self.W_ntc_fixed)
             W_spec_nonneg = _act(self.W_spec)
-            H_nonneg = _act(self.H)
+            H_nonneg = _act(H_batch)
             W_combined_nonneg = torch.cat([W_ntc_nonneg, W_spec_nonneg], dim=1)
             return W_combined_nonneg, H_nonneg
 
-    model = FixedNTCOptimizer(W_ntc_const, init_W_specific, H_init).to(device)
+    model = FixedNTCOptimizer(W_ntc_const, init_W_specific).to(device)
+    H_tensor_cpu = torch.tensor(H_init, dtype=torch.float32)
 
     optimizer = optim.Adam([
-        {'params': [model.W_spec], 'lr': lr_W_specific},
-        {'params': [model.H], 'lr': lr_W_specific}
+        {'params': [model.W_spec], 'lr': lr_W_specific}
     ])
+
+    # Global Adam states for H on CPU
+    m_H_cpu = torch.zeros_like(H_tensor_cpu)
+    v_H_cpu = torch.zeros_like(H_tensor_cpu)
+    beta1, beta2 = 0.9, 0.999
+    adam_eps = 1e-8
 
     alpha_fm = float(hyperparameters.get("alpha_fm", 0.0))
     gamma    = float(hyperparameters.get("gamma", 0.0))
@@ -408,10 +456,15 @@ def solve_specific_with_fixed_ntc(
         for i in range(0, n_spec, batch_size):
             optimizer.zero_grad()
 
-            W_combined, H = model()
             idx = permutation[i:i+batch_size]
             X_b = X_tensor[:, idx]
-            H_b = H[:, idx]
+
+            # 2. Local H Tensor Creation (Leaf node on GPU)
+            H_b_device = H_tensor_cpu[:, idx].clone().detach().to(device)
+            H_b_device.requires_grad = True 
+            
+            # 4. Forward Pass
+            W_combined, H_b = model(H_b_device)
 
             recon_loss = torch.mean((X_b - W_combined @ H_b)**2)
 
@@ -431,8 +484,27 @@ def solve_specific_with_fixed_ntc(
 
         
             total_loss = recon_loss + fm_loss + ortho_loss
+            
             total_loss.backward()
             optimizer.step()
+            
+            # Custom Dense-Sparse Adam Step for H
+            with torch.no_grad():
+                g = H_b_device.grad
+                t = epoch + 1
+                
+                m_b = beta1 * m_H_cpu[:, idx].to(device) + (1 - beta1) * g
+                v_b = beta2 * v_H_cpu[:, idx].to(device) + (1 - beta2) * (g ** 2)
+                
+                m_hat = m_b / (1 - beta1 ** t)
+                v_hat = v_b / (1 - beta2 ** t)
+                
+                H_b_device.sub_(lr_W_specific * m_hat / (torch.sqrt(v_hat) + adam_eps))
+                
+                # Write back to CPU RAM
+                H_tensor_cpu[:, idx] = H_b_device.cpu()
+                m_H_cpu[:, idx] = m_b.cpu()
+                v_H_cpu[:, idx] = v_b.cpu()
 
             epoch_losses['recon_loss'] += float(recon_loss.item())
             epoch_losses['fm_loss'] += float(fm_loss.item())
@@ -451,7 +523,7 @@ def solve_specific_with_fixed_ntc(
         prev_loss = cur
 
     W_final_spec = _act(model.W_spec).detach().cpu().numpy()
-    H_final = _act(model.H).detach().cpu().numpy()
+    H_final = _act(H_tensor_cpu).detach().cpu().numpy()
     return W_final_spec, H_final, pd.DataFrame(loss_history)
 
 def solve_specific_with_fixed_ntc_hybrid(
@@ -517,24 +589,29 @@ def solve_specific_with_fixed_ntc_hybrid(
         ).to(device, dtype=torch.float32)
 
     class FixedNTCOptimizer(nn.Module):
-        def __init__(self, W_ntc_fixed, W_spec_init, H_init_full):
+        def __init__(self, W_ntc_fixed, W_spec_init):
             super().__init__()
             self.W_ntc_fixed = W_ntc_fixed  # not a Parameter
             self.W_spec = nn.Parameter(torch.tensor(W_spec_init, dtype=torch.float32))
-            self.H = nn.Parameter(torch.tensor(H_init_full, dtype=torch.float32))
-        def forward(self):
+        def forward(self, H_batch):
             W_ntc_nonneg = _act(self.W_ntc_fixed)
             W_spec_nonneg = _act(self.W_spec)
-            H_nonneg = _act(self.H)
+            H_nonneg = _act(H_batch)
             W_combined_nonneg = torch.cat([W_ntc_nonneg, W_spec_nonneg], dim=1)
             return W_combined_nonneg, H_nonneg
 
-    model = FixedNTCOptimizer(W_ntc_const, init_W_specific, H_init).to(device)
+    model = FixedNTCOptimizer(W_ntc_const, init_W_specific).to(device)
+    H_tensor_cpu = torch.tensor(H_init, dtype=torch.float32)
 
     optimizer = optim.Adam([
-        {'params': [model.W_spec], 'lr': lr_W_specific},
-        {'params': [model.H], 'lr': lr_W_specific}
+        {'params': [model.W_spec], 'lr': lr_W_specific}
     ])
+
+    # Global Adam states for H on CPU
+    m_H_cpu = torch.zeros_like(H_tensor_cpu)
+    v_H_cpu = torch.zeros_like(H_tensor_cpu)
+    beta1, beta2 = 0.9, 0.999
+    adam_eps = 1e-8
 
     alpha_fm = float(hyperparameters.get("alpha_fm", 0.0))
     gamma    = float(hyperparameters.get("gamma", 0.0))
@@ -552,15 +629,17 @@ def solve_specific_with_fixed_ntc_hybrid(
         for i in range(0, n_spec, batch_size):
             optimizer.zero_grad()
 
-            W_combined, H = model()
             idx = permutation[i:i+batch_size]
             if x_on_device:
                 X_b = X_tensor[:, idx]
-                H_idx = idx
             else:
                 X_b = X_tensor_cpu[:, idx].to(device, non_blocking=True)
-                H_idx = idx.to(device, non_blocking=True)
-            H_b = H[:, H_idx]
+                
+            # Local H Tensor Creation
+            H_b_device = H_tensor_cpu[:, idx].clone().detach().to(device)
+            H_b_device.requires_grad = True
+
+            W_combined, H_b = model(H_b_device)
 
             recon_loss = torch.mean((X_b - W_combined @ H_b)**2)
 
@@ -579,8 +658,27 @@ def solve_specific_with_fixed_ntc_hybrid(
                 ortho_loss = gamma * torch.mean((W_ntc_norm.T @ W_spec_norm)**2)
 
             total_loss = recon_loss + fm_loss + ortho_loss
+            
             total_loss.backward()
             optimizer.step()
+            
+            # Custom Dense-Sparse Adam Step for H
+            with torch.no_grad():
+                g = H_b_device.grad
+                t = epoch + 1
+                
+                m_b = beta1 * m_H_cpu[:, idx].to(device) + (1 - beta1) * g
+                v_b = beta2 * v_H_cpu[:, idx].to(device) + (1 - beta2) * (g ** 2)
+                
+                m_hat = m_b / (1 - beta1 ** t)
+                v_hat = v_b / (1 - beta2 ** t)
+                
+                H_b_device.sub_(lr_W_specific * m_hat / (torch.sqrt(v_hat) + adam_eps))
+                
+                # Write back to CPU RAM
+                H_tensor_cpu[:, idx] = H_b_device.cpu()
+                m_H_cpu[:, idx] = m_b.cpu()
+                v_H_cpu[:, idx] = v_b.cpu()
 
             epoch_losses['recon_loss'] += float(recon_loss.item())
             epoch_losses['fm_loss'] += float(fm_loss.item())
@@ -599,5 +697,5 @@ def solve_specific_with_fixed_ntc_hybrid(
         prev_loss = cur
 
     W_final_spec = _act(model.W_spec).detach().cpu().numpy()
-    H_final = _act(model.H).detach().cpu().numpy()
+    H_final = _act(H_tensor_cpu).detach().cpu().numpy()
     return W_final_spec, H_final, pd.DataFrame(loss_history)
