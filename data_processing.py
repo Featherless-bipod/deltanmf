@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from deltanmf.api import run_twostage_deltanmf
 from deltanmf.io import h5ad_to_npy
-
+from deltanmf.ddp_utils import setup_ddp
 
 def _normalize_ensgid(value):
     s = str(value).strip()
@@ -87,6 +87,8 @@ def _map_to_ensembl_and_collapse_duplicates(X_ntc, X_spec, gene_names, gene_matr
 
 
 def main():
+    local_rank, world_size, is_ddp = setup_ddp()
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--stage2-rel-gamma", type=float, default=0.0)
     args = parser.parse_args()
@@ -96,23 +98,46 @@ def main():
     gamma_tag = f"{gamma:.6g}".replace(".", "p")
     out_root = Path("/hpc/group/gersbachlab/agk21/Schizophrenia_PROVEIT_Perturbseq/deltanmf")
     out = out_root / f"noFM_stage2_rel_gamma_{gamma_tag}"
-    out.mkdir(parents=True, exist_ok=True)
+    
+    if local_rank == 0:
+        out.mkdir(parents=True, exist_ok=True)
 
-    X_ntc, X_spec, gene_names = h5ad_to_npy(
-        h5ad_path,
-        ntc_key="negative_control",
-        condition_key="guide_type",
-        case_key=None,
-        layer=None,
-    )
-    gene_matrix_path = Path(
-        "/hpc/group/gersbachlab/agk21/Schizophrenia_PROVEIT_Perturbseq/clustering/geneMatrix.tsv"
-    )
-    if not gene_matrix_path.exists():
-        raise FileNotFoundError(f"Missing: {gene_matrix_path}")
-    X_ntc, X_spec, gene_names = _map_to_ensembl_and_collapse_duplicates(
-        X_ntc, X_spec, gene_names, gene_matrix_path
-    )
+    # Implement Memory-Efficient Data Loading for DDP
+    # Rank 0 loads h5ad, collapses it, and saves it to a persistent temp dir.
+    # Other ranks wait, and then everyone mmaps the numpy arrays to share RAM.
+    tmp_data_dir = Path("/work/zy231/deltanmf/tmp_data")
+    
+    if local_rank == 0:
+        tmp_data_dir.mkdir(parents=True, exist_ok=True)
+        print("Rank 0 parsing data...")
+        X_ntc, X_spec, gene_names = h5ad_to_npy(
+            h5ad_path,
+            ntc_key="negative_control",
+            condition_key="guide_type",
+            case_key=None,
+            layer=None,
+        )
+        gene_matrix_path = Path(
+            "/hpc/group/gersbachlab/agk21/Schizophrenia_PROVEIT_Perturbseq/clustering/geneMatrix.tsv"
+        )
+        if not gene_matrix_path.exists():
+            raise FileNotFoundError(f"Missing: {gene_matrix_path}")
+        X_ntc, X_spec, gene_names = _map_to_ensembl_and_collapse_duplicates(
+            X_ntc, X_spec, gene_names, gene_matrix_path
+        )
+        np.save(tmp_data_dir / "X_ntc.npy", X_ntc)
+        np.save(tmp_data_dir / "X_spec.npy", X_spec)
+        np.save(tmp_data_dir / "gene_names.npy", gene_names)
+        print("Rank 0 saved cached data to disk.")
+
+    if is_ddp:
+        import torch.distributed as dist
+        dist.barrier()
+        
+    print(f"Rank {local_rank} loading mmaps...")
+    X_ntc = np.load(tmp_data_dir / "X_ntc.npy", mmap_mode="r")
+    X_spec = np.load(tmp_data_dir / "X_spec.npy", mmap_mode="r")
+    gene_names = np.load(tmp_data_dir / "gene_names.npy", allow_pickle=True)
 
     S_E_PATH = Path("/hpc/group/singhlab/user/agk21/projects/NMF/src/scGPT/scgpt_similarity_human_updated20251027_S_E_relu.npy")
     S_E_GENES_PATH = Path("/hpc/group/singhlab/user/agk21/projects/NMF/src/scGPT/scgpt_similarity_human_updated20251027_genes_order.json")
@@ -141,16 +166,17 @@ def main():
         stage1_batchsize=40000,
     )
 
-    np.save(out / "W_stage1.npy", res["W_stage1"])
-    np.save(out / "H_stage1.npy", res["H_stage1"])
-    np.save(out / "W_stage2.npy", res["W_stage2"])
-    np.save(out / "H_stage2.npy", res["H_stage2"])
-    np.save(out / "gene_names_aligned.npy", res["gene_names_aligned"])
-    np.savetxt(out / "gene_names_aligned.tsv", res["gene_names_aligned"], fmt="%s")
-    np.save(out / "ntc_cell_ids.npy", res["ntc_cell_ids"])
-    np.savetxt(out / "ntc_cell_ids.tsv", res["ntc_cell_ids"], fmt="%s")
-    np.save(out / "specific_cell_ids.npy", res["specific_cell_ids"])
-    np.savetxt(out / "specific_cell_ids.tsv", res["specific_cell_ids"], fmt="%s")
+    if local_rank == 0:
+        np.save(out / "W_stage1.npy", res["W_stage1"])
+        np.save(out / "H_stage1.npy", res["H_stage1"])
+        np.save(out / "W_stage2.npy", res["W_stage2"])
+        np.save(out / "H_stage2.npy", res["H_stage2"])
+        np.save(out / "gene_names_aligned.npy", res["gene_names_aligned"])
+        np.savetxt(out / "gene_names_aligned.tsv", res["gene_names_aligned"], fmt="%s")
+        np.save(out / "ntc_cell_ids.npy", res["ntc_cell_ids"])
+        np.savetxt(out / "ntc_cell_ids.tsv", res["ntc_cell_ids"], fmt="%s")
+        np.save(out / "specific_cell_ids.npy", res["specific_cell_ids"])
+        np.savetxt(out / "specific_cell_ids.tsv", res["specific_cell_ids"], fmt="%s")
 
 
 if __name__ == "__main__":

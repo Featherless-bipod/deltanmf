@@ -1,0 +1,87 @@
+Anaconda3 2024.02
+
+EnvironmentNameNotFound: Could not find conda environment: cell_env
+You can list all discoverable environments with `conda info --envs`.
+
+
+Starting DDP on dcc-dhvimdcore-gpu-ferc-s-p15-11:17909
+W0317 00:31:21.550000 115967 torch/distributed/run.py:803] 
+W0317 00:31:21.550000 115967 torch/distributed/run.py:803] *****************************************
+W0317 00:31:21.550000 115967 torch/distributed/run.py:803] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0317 00:31:21.550000 115967 torch/distributed/run.py:803] *****************************************
+[rank3]: Traceback (most recent call last):
+[rank3]:   File "/work/zy231/deltanmf/data_processing.py", line 183, in <module>
+[rank3]:     main()
+[rank3]:   File "/work/zy231/deltanmf/data_processing.py", line 90, in main
+[rank3]:     local_rank, world_size, is_ddp = setup_ddp()
+[rank3]:                                      ^^^^^^^^^^^
+[rank3]:   File "/work/zy231/deltanmf/deltanmf/ddp_utils.py", line 32, in setup_ddp
+[rank3]:     torch.cuda.set_device(local_rank)
+[rank3]:   File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/cuda/__init__.py", line 567, in set_device
+[rank3]:     torch._C._cuda_setDevice(device)
+[rank3]: torch.AcceleratorError: CUDA error: invalid device ordinal
+[rank3]: GPU device may be out of range, do you have enough GPUs?
+[rank3]: CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+[rank3]: For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+[rank3]: Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/work/zy231/deltanmf/data_processing.py", line 183, in <module>
+[rank2]:     main()
+[rank2]:   File "/work/zy231/deltanmf/data_processing.py", line 90, in main
+[rank2]:     local_rank, world_size, is_ddp = setup_ddp()
+[rank2]:                                      ^^^^^^^^^^^
+[rank2]:   File "/work/zy231/deltanmf/deltanmf/ddp_utils.py", line 32, in setup_ddp
+[rank2]:     torch.cuda.set_device(local_rank)
+[rank2]:   File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/cuda/__init__.py", line 567, in set_device
+[rank2]:     torch._C._cuda_setDevice(device)
+[rank2]: torch.AcceleratorError: CUDA error: invalid device ordinal
+[rank2]: GPU device may be out of range, do you have enough GPUs?
+[rank2]: CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+[rank2]: For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+[rank2]: Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+Rank 0 parsing data...
+[rank2]:[W317 00:32:27.625408101 ProcessGroupNCCL.cpp:1524] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+W0317 00:32:46.989000 115967 torch/distributed/elastic/multiprocessing/api.py:908] Sending process 116060 closing signal SIGTERM
+W0317 00:32:46.992000 115967 torch/distributed/elastic/multiprocessing/api.py:908] Sending process 116061 closing signal SIGTERM
+E0317 00:32:47.759000 115967 torch/distributed/elastic/multiprocessing/api.py:882] failed (exitcode: 1) local_rank: 2 (pid: 116062) of binary: /opt/apps/rhel9/Anaconda3-2024.02/bin/python
+Traceback (most recent call last):
+  File "/hpc/home/zy231/.local/bin/torchrun", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 357, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/run.py", line 936, in main
+    run(args)
+  File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/run.py", line 927, in run
+    elastic_launch(
+  File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 156, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 293, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+data_processing.py FAILED
+------------------------------------------------------------
+Failures:
+[1]:
+  time      : 2026-03-17_00:32:46
+  host      : dcc-dhvimdcore-gpu-ferc-s-p15-11.rc.duke.edu
+  rank      : 3 (local_rank: 3)
+  exitcode  : 1 (pid: 116063)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-03-17_00:32:46
+  host      : dcc-dhvimdcore-gpu-ferc-s-p15-11.rc.duke.edu
+  rank      : 2 (local_rank: 2)
+  exitcode  : 1 (pid: 116062)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
+srun: error: dcc-dhvimdcore-gpu-ferc-s-p15-11: task 0: Exited with exit code 1

@@ -25,14 +25,22 @@ class NMFDataset(Dataset):
         return self.X[:, idx], idx
 
 def setup_ddp():
-    """Initializes DDP from environment variables."""
-    dist.init_process_group("nccl")
-    local_rank = int(os.environ["LOCAL_RANK"])
-    torch.cuda.set_device(local_rank)
-    return local_rank
+    """Initializes DDP from environment variables if torchrun is used, else falls back to single GPU."""
+    if "LOCAL_RANK" in os.environ:
+        dist.init_process_group("nccl")
+        local_rank = int(os.environ["LOCAL_RANK"])
+        torch.cuda.set_device(local_rank)
+        world_size = dist.get_world_size()
+        return local_rank, world_size, True
+    else:
+        # Fallback to single GPU (local_rank 0)
+        local_rank = 0
+        world_size = 1
+        return local_rank, world_size, False
 
-def cleanup_ddp():
-    dist.destroy_process_group()
+def cleanup_ddp(is_ddp):
+    if is_ddp:
+        dist.destroy_process_group()
 
 def solve_ntc_regularized_ddp(
     X, k, S_E=None,
@@ -51,9 +59,9 @@ def solve_ntc_regularized_ddp(
 ):
     """
     DDP-enabled variant of solve_ntc_regularized_minibatch utilizing SparseAdam for H.
-    Should be launched via torchrun.
+    Should be launched via torchrun, but degrades gracefully to single-GPU otherwise.
     """
-    local_rank = setup_ddp()
+    local_rank, world_size, is_ddp = setup_ddp()
     device = torch.device(f"cuda:{local_rank}")
     
     if seed is not None:
@@ -86,7 +94,6 @@ def solve_ntc_regularized_ddp(
     dataset = NMFDataset(X_tensor_cpu)
     
     # Split cells among ranks statically to ensure completely disjoint subsets and local isolated moments
-    world_size = dist.get_world_size()
     cells_per_rank = n // world_size
     start_idx = local_rank * cells_per_rank
     end_idx = start_idx + cells_per_rank if local_rank != world_size - 1 else n
@@ -98,7 +105,7 @@ def solve_ntc_regularized_ddp(
         local_dataset, 
         batch_size=batch_size, 
         shuffle=True, 
-        num_workers=4, 
+        num_workers=2, 
         pin_memory=True,
         prefetch_factor=2
     )
@@ -114,20 +121,24 @@ def solve_ntc_regularized_ddp(
         with torch.no_grad():
             H_tensor_cpu.copy_(H0.cpu())
 
-    dist.barrier()
+    if is_ddp:
+        dist.barrier()
     
     # Broadcast init_W to all ranks if it was scaled
-    if init_W is not None:
+    if is_ddp and init_W is not None:
         init_W_tensor = torch.tensor(init_W, dtype=torch.float32).to(device)
         dist.broadcast(init_W_tensor, src=0)
         init_W = init_W_tensor.cpu().numpy()
 
     # Model and DDP wrapping
     model = NTCOptimizer(m, k, init_W=init_W).to(device)
-    ddp_model = nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
+    if is_ddp:
+        optimizer_model = nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
+    else:
+        optimizer_model = model
 
     # Optimizer optimizes model parameters (W) completely standardly
-    optimizer_W = optim.Adam(ddp_model.parameters(), lr=lr_start)
+    optimizer_W = optim.Adam(optimizer_model.parameters(), lr=lr_start)
 
     S_E_tensor = L_S_tensor = None
     if S_E is not None:
@@ -169,7 +180,7 @@ def solve_ntc_regularized_ddp(
             H_b_device = H_tensor_cpu[:, idx].clone().detach().to(device)
             H_b_device.requires_grad = True
 
-            W_raw, H_b_out = ddp_model(H_b_device)
+            W_raw, H_b_out = optimizer_model(H_b_device)
             W_eff = _act(W_raw)
             H_eff = _act(H_b_out)
 
@@ -226,8 +237,10 @@ def solve_ntc_regularized_ddp(
 
         # Average losses across all GPUs for reporting/early stopping
         avg_losses = {k: torch.tensor(v / max(1, num_batches), device=device) for k, v in epoch_losses.items()}
+        if is_ddp:
+            for k in avg_losses:
+                dist.all_reduce(avg_losses[k], op=dist.ReduceOp.AVG)
         for k in avg_losses:
-            dist.all_reduce(avg_losses[k], op=dist.ReduceOp.AVG)
             avg_losses[k] = float(avg_losses[k].item())
 
         cur_lr = optimizer_W.param_groups[0]["lr"]
@@ -250,25 +263,31 @@ def solve_ntc_regularized_ddp(
             break
         prev_loss = cur
 
-    dist.barrier()
-    
-    # Broadcast final W to ensure everyone is identical mathematically
-    W_final = model.W.detach()
-    dist.broadcast(W_final, src=0)
+    if is_ddp:
+        dist.barrier()
+        
+        # Broadcast final W to ensure everyone is identical mathematically
+        W_final = model.W.detach()
+        dist.broadcast(W_final, src=0)
+    else:
+        W_final = model.W.detach()
     
     # Reconstruct the global H matrix identically across all workers
     with torch.no_grad():
-        mask = torch.zeros(k, n, dtype=torch.float32)
-        mask[:, local_indices] = 1.0
-        # Zero out the columns of H that were entirely processed by other ranks
-        H_tensor_cpu *= mask
-        # Move to GPU for NCCL all_reduce summation over all distinct local masks
-        H_final_gpu = H_tensor_cpu.to(device)
-        dist.all_reduce(H_final_gpu, op=dist.ReduceOp.SUM)
-        # Now every rank literally possesses the exact FULL H matrix
-        H_final_cpu = H_final_gpu.cpu()
+        if is_ddp:
+            mask = torch.zeros(k, n, dtype=torch.float32)
+            mask[:, local_indices] = 1.0
+            # Zero out the columns of H that were entirely processed by other ranks
+            H_tensor_cpu *= mask
+            # Move to GPU for NCCL all_reduce summation over all distinct local masks
+            H_final_gpu = H_tensor_cpu.to(device)
+            dist.all_reduce(H_final_gpu, op=dist.ReduceOp.SUM)
+            # Now every rank literally possesses the exact FULL H matrix
+            H_final_cpu = H_final_gpu.cpu()
+        else:
+            H_final_cpu = H_tensor_cpu.clone()
     
-    cleanup_ddp()
+    cleanup_ddp(is_ddp)
     
     with torch.no_grad():
         W_eff = _act(W_final)

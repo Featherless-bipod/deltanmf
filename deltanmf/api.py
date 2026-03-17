@@ -6,6 +6,8 @@ from . import preprocessing
 from . import nmf_torch
 from . import models
 from . import pipeline_utils
+from . import ddp_utils
+import os
 
 
 def calculate_adaptive_hyperparams(
@@ -195,21 +197,36 @@ def run_twostage_deltanmf(
     )
     alpha_val = alpha_params["alpha_ntc"]
 
-    ntc_solver = models.solve_ntc_regularized_minibatch if stage1_use_minibatch_ntc else models.solve_ntc_regularized
-    ntc_kwargs = dict(
-        X=X_ntc, k=K_stage1, S_E=S_E_aligned,
-        alpha_ntc=alpha_val,
-        init_W=W_init, init_H=H_init,
-        max_iter=stage1_max_iter, tol=0,
-        nonneg=FM_NONNEG, softplus_beta=FM_SOFTPLUS_BETA,
-        normalize_W=False, init_fix_scale=False,
-        seed=BASE_SEED,
-        lr_start=lr, fm_target_ratio=stage1_rel_alpha,
-        fm_apply_late=True, fm_last_iters=FM_LAST_ITERS
-    )
-    if stage1_use_minibatch_ntc:
-        ntc_kwargs["batch_size"] = int(stage1_minibatch_size_ntc)
-    W_ntc, H_ntc, loss_fm = ntc_solver(**ntc_kwargs)
+    is_ddp = "LOCAL_RANK" in os.environ
+    if is_ddp or stage1_use_minibatch_ntc:
+        # If DDP is requested or implicitly available via torchrun
+        ntc_kwargs = dict(
+            X=X_ntc, k=K_stage1, S_E=S_E_aligned,
+            alpha_ntc=alpha_val,
+            init_W=W_init, init_H=H_init,
+            max_iter=stage1_max_iter, tol=0,
+            nonneg=FM_NONNEG, softplus_beta=FM_SOFTPLUS_BETA,
+            normalize_W=False, init_fix_scale=False,
+            seed=BASE_SEED, lr_start=lr,
+            fm_target_ratio=stage1_rel_alpha,
+            fm_apply_late=True, fm_last_iters=FM_LAST_ITERS,
+            batch_size=int(stage1_minibatch_size_ntc)
+        )
+        W_ntc, H_ntc, loss_fm = ddp_utils.solve_ntc_regularized_ddp(**ntc_kwargs)
+    else:
+        ntc_solver = models.solve_ntc_regularized
+        ntc_kwargs = dict(
+            X=X_ntc, k=K_stage1, S_E=S_E_aligned,
+            alpha_ntc=alpha_val,
+            init_W=W_init, init_H=H_init,
+            max_iter=stage1_max_iter, tol=0,
+            nonneg=FM_NONNEG, softplus_beta=FM_SOFTPLUS_BETA,
+            normalize_W=False, init_fix_scale=False,
+            seed=BASE_SEED, lr_start=lr,
+            fm_target_ratio=stage1_rel_alpha,
+            fm_apply_late=True, fm_last_iters=FM_LAST_ITERS
+        )
+        W_ntc, H_ntc, loss_fm = ntc_solver(**ntc_kwargs)
 
     H_n_spec = pipeline_utils.solve_H_pi_then_cd(
         X_spec, W_ntc, max_iter_cd=50, tol=1e-8, random_state=BASE_SEED

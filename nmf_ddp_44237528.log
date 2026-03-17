@@ -1,0 +1,208 @@
+Anaconda3 2024.02
+
+EnvironmentNameNotFound: Could not find conda environment: cell_env
+You can list all discoverable environments with `conda info --envs`.
+
+
+Starting DDP on dcc-core-ferc-s-z25-21:17528
+W0317 06:29:36.235000 305343 torch/distributed/run.py:803] 
+W0317 06:29:36.235000 305343 torch/distributed/run.py:803] *****************************************
+W0317 06:29:36.235000 305343 torch/distributed/run.py:803] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0317 06:29:36.235000 305343 torch/distributed/run.py:803] *****************************************
+Rank 0 parsing data...
+[rank3]:[W317 06:40:19.570090247 socket.cpp:472] [c10d] waitForInput: poll for socket SocketImpl(fd=3, addr=[dcc-core-ferc-s-z25-21.rc.duke.edu]:53278, remote=[dcc-core-ferc-s-z25-21.rc.duke.edu]:43813) returned 0, likely a timeout
+[rank3]:[W317 06:40:19.570200878 socket.cpp:497] [c10d] waitForInput: socket SocketImpl(fd=3, addr=[dcc-core-ferc-s-z25-21.rc.duke.edu]:53278, remote=[dcc-core-ferc-s-z25-21.rc.duke.edu]:43813) timed out after 600000ms
+[rank1]:[W317 06:40:19.635036914 socket.cpp:472] [c10d] waitForInput: poll for socket SocketImpl(fd=3, addr=[dcc-core-ferc-s-z25-21.rc.duke.edu]:53262, remote=[dcc-core-ferc-s-z25-21.rc.duke.edu]:43813) returned 0, likely a timeout
+[rank1]:[W317 06:40:19.635127638 socket.cpp:497] [c10d] waitForInput: socket SocketImpl(fd=3, addr=[dcc-core-ferc-s-z25-21.rc.duke.edu]:53262, remote=[dcc-core-ferc-s-z25-21.rc.duke.edu]:43813) timed out after 600000ms
+[rank2]:[W317 06:40:19.672022678 socket.cpp:472] [c10d] waitForInput: poll for socket SocketImpl(fd=3, addr=[dcc-core-ferc-s-z25-21.rc.duke.edu]:53300, remote=[dcc-core-ferc-s-z25-21.rc.duke.edu]:43813) returned 0, likely a timeout
+[rank2]:[W317 06:40:19.672113182 socket.cpp:497] [c10d] waitForInput: socket SocketImpl(fd=3, addr=[dcc-core-ferc-s-z25-21.rc.duke.edu]:53300, remote=[dcc-core-ferc-s-z25-21.rc.duke.edu]:43813) timed out after 600000ms
+[rank3]: Traceback (most recent call last):
+[rank3]:   File "/work/zy231/deltanmf/data_processing.py", line 183, in <module>
+[rank3]:     main()
+[rank3]:   File "/work/zy231/deltanmf/data_processing.py", line 135, in main
+[rank3]:     dist.barrier()
+[rank3]:   File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/c10d_logger.py", line 81, in wrapper
+[rank3]:     return func(*args, **kwargs)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^^
+[rank3]:   File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py", line 4881, in barrier
+[rank3]:     work = group.barrier(opts=opts)
+[rank3]:            ^^^^^^^^^^^^^^^^^^^^^^^^
+[rank3]: torch.distributed.DistBackendError: [3] is setting up NCCL communicator and retrieving ncclUniqueId from [0] via c10d key-value store by key '0', but store->get('0') got error: wait timeout after 600000ms, keys: /default_pg/0//cuda//0
+[rank3]: Exception raised from doWait at /pytorch/torch/csrc/distributed/c10d/TCPStore.cpp:603 (most recent call first):
+[rank3]: frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x80 (0x7f92d6019b80 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libc10.so)
+[rank3]: frame #1: <unknown function> + 0x5f600c1 (0x7f93183840c1 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #2: <unknown function> + 0x1499942 (0x7f93138bd942 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #3: c10d::TCPStore::doGet(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x33 (0x7f9318420043 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #4: c10d::TCPStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x114 (0x7f9318421154 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #5: c10d::PrefixStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x30 (0x7f93183cb750 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #6: c10d::PrefixStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x30 (0x7f93183cb750 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #7: c10d::PrefixStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x30 (0x7f93183cb750 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #8: c10d::ProcessGroupNCCL::broadcastUniqueNCCLID(ncclUniqueId*, bool, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int) + 0x5c4 (0x7f92d6fa6014 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank3]: frame #9: c10d::ProcessGroupNCCL::initNCCLComm(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, c10::Device&, c10d::OpType, int, bool) + 0x1c1a (0x7f92d6fa8b5a in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank3]: frame #10: <unknown function> + 0xe6533f (0x7f92d6fad33f in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank3]: frame #11: c10d::ProcessGroupNCCL::allreduce_impl(at::Tensor&, char const*, c10d::AllreduceOptions const&) + 0xc2 (0x7f92d6fadbb2 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank3]: frame #12: c10d::ProcessGroupNCCL::barrier(c10d::BarrierOptions const&) + 0x515 (0x7f92d6fbccb5 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank3]: frame #13: <unknown function> + 0x5f969c0 (0x7f93183ba9c0 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #14: <unknown function> + 0x5fa450a (0x7f93183c850a in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #15: <unknown function> + 0x54e09e5 (0x7f93179049e5 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #16: <unknown function> + 0x5fb6574 (0x7f93183da574 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #17: <unknown function> + 0x5fb74f1 (0x7f93183db4f1 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank3]: frame #18: <unknown function> + 0xe0c0aa (0x7f9327bd70aa in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_python.so)
+[rank3]: frame #19: <unknown function> + 0x3cc7bd (0x7f93271977bd in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_python.so)
+[rank3]: frame #20: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x528187]
+[rank3]: frame #21: _PyObject_MakeTpCall + 0x27c (0x503a0c in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank3]: frame #22: _PyEval_EvalFrameDefault + 0x6a3 (0x510f33 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank3]: frame #23: _PyFunction_Vectorcall + 0x173 (0x538733 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank3]: frame #24: _PyEval_EvalFrameDefault + 0x4761 (0x514ff1 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank3]: frame #25: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5cb55a]
+[rank3]: frame #26: PyEval_EvalCode + 0x9f (0x5cac2f in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank3]: frame #27: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5ebcf7]
+[rank3]: frame #28: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5e7890]
+[rank3]: frame #29: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5fc832]
+[rank3]: frame #30: _PyRun_SimpleFileObject + 0x19f (0x5fbbff in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank3]: frame #31: _PyRun_AnyFileObject + 0x43 (0x5fb923 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank3]: frame #32: Py_RunMain + 0x2ee (0x5f65ce in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank3]: frame #33: Py_BytesMain + 0x39 (0x5bb3d9 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank3]: frame #34: <unknown function> + 0x2a610 (0x7f9359e2a610 in /lib64/libc.so.6)
+[rank3]: frame #35: __libc_start_main + 0x80 (0x7f9359e2a6c0 in /lib64/libc.so.6)
+[rank3]: frame #36: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5bb223]
+[rank3]: . This may indicate a possible application crash on rank 0 or a network set up issue.
+[rank1]: Traceback (most recent call last):
+[rank1]:   File "/work/zy231/deltanmf/data_processing.py", line 183, in <module>
+[rank1]:     main()
+[rank1]:   File "/work/zy231/deltanmf/data_processing.py", line 135, in main
+[rank1]:     dist.barrier()
+[rank1]:   File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/c10d_logger.py", line 81, in wrapper
+[rank1]:     return func(*args, **kwargs)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^
+[rank1]:   File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py", line 4881, in barrier
+[rank1]:     work = group.barrier(opts=opts)
+[rank1]:            ^^^^^^^^^^^^^^^^^^^^^^^^
+[rank1]: torch.distributed.DistBackendError: [1] is setting up NCCL communicator and retrieving ncclUniqueId from [0] via c10d key-value store by key '0', but store->get('0') got error: wait timeout after 600000ms, keys: /default_pg/0//cuda//0
+[rank1]: Exception raised from doWait at /pytorch/torch/csrc/distributed/c10d/TCPStore.cpp:603 (most recent call first):
+[rank1]: frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x80 (0x7fae165e2b80 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libc10.so)
+[rank1]: frame #1: <unknown function> + 0x5f600c1 (0x7fae5894d0c1 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #2: <unknown function> + 0x1499942 (0x7fae53e86942 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #3: c10d::TCPStore::doGet(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x33 (0x7fae589e9043 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #4: c10d::TCPStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x114 (0x7fae589ea154 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #5: c10d::PrefixStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x30 (0x7fae58994750 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #6: c10d::PrefixStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x30 (0x7fae58994750 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #7: c10d::PrefixStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x30 (0x7fae58994750 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #8: c10d::ProcessGroupNCCL::broadcastUniqueNCCLID(ncclUniqueId*, bool, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int) + 0x5c4 (0x7fae1756f014 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank1]: frame #9: c10d::ProcessGroupNCCL::initNCCLComm(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, c10::Device&, c10d::OpType, int, bool) + 0x1c1a (0x7fae17571b5a in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank1]: frame #10: <unknown function> + 0xe6533f (0x7fae1757633f in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank1]: frame #11: c10d::ProcessGroupNCCL::allreduce_impl(at::Tensor&, char const*, c10d::AllreduceOptions const&) + 0xc2 (0x7fae17576bb2 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank1]: frame #12: c10d::ProcessGroupNCCL::barrier(c10d::BarrierOptions const&) + 0x515 (0x7fae17585cb5 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank1]: frame #13: <unknown function> + 0x5f969c0 (0x7fae589839c0 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #14: <unknown function> + 0x5fa450a (0x7fae5899150a in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #15: <unknown function> + 0x54e09e5 (0x7fae57ecd9e5 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #16: <unknown function> + 0x5fb6574 (0x7fae589a3574 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #17: <unknown function> + 0x5fb74f1 (0x7fae589a44f1 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank1]: frame #18: <unknown function> + 0xe0c0aa (0x7fae681a00aa in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_python.so)
+[rank1]: frame #19: <unknown function> + 0x3cc7bd (0x7fae677607bd in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_python.so)
+[rank1]: frame #20: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x528187]
+[rank1]: frame #21: _PyObject_MakeTpCall + 0x27c (0x503a0c in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank1]: frame #22: _PyEval_EvalFrameDefault + 0x6a3 (0x510f33 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank1]: frame #23: _PyFunction_Vectorcall + 0x173 (0x538733 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank1]: frame #24: _PyEval_EvalFrameDefault + 0x4761 (0x514ff1 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank1]: frame #25: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5cb55a]
+[rank1]: frame #26: PyEval_EvalCode + 0x9f (0x5cac2f in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank1]: frame #27: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5ebcf7]
+[rank1]: frame #28: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5e7890]
+[rank1]: frame #29: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5fc832]
+[rank1]: frame #30: _PyRun_SimpleFileObject + 0x19f (0x5fbbff in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank1]: frame #31: _PyRun_AnyFileObject + 0x43 (0x5fb923 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank1]: frame #32: Py_RunMain + 0x2ee (0x5f65ce in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank1]: frame #33: Py_BytesMain + 0x39 (0x5bb3d9 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank1]: frame #34: <unknown function> + 0x2a610 (0x7fae9a22a610 in /lib64/libc.so.6)
+[rank1]: frame #35: __libc_start_main + 0x80 (0x7fae9a22a6c0 in /lib64/libc.so.6)
+[rank1]: frame #36: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5bb223]
+[rank1]: . This may indicate a possible application crash on rank 0 or a network set up issue.
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/work/zy231/deltanmf/data_processing.py", line 183, in <module>
+[rank2]:     main()
+[rank2]:   File "/work/zy231/deltanmf/data_processing.py", line 135, in main
+[rank2]:     dist.barrier()
+[rank2]:   File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/c10d_logger.py", line 81, in wrapper
+[rank2]:     return func(*args, **kwargs)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^
+[rank2]:   File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/distributed_c10d.py", line 4881, in barrier
+[rank2]:     work = group.barrier(opts=opts)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]: torch.distributed.DistBackendError: [2] is setting up NCCL communicator and retrieving ncclUniqueId from [0] via c10d key-value store by key '0', but store->get('0') got error: wait timeout after 600000ms, keys: /default_pg/0//cuda//0
+[rank2]: Exception raised from doWait at /pytorch/torch/csrc/distributed/c10d/TCPStore.cpp:603 (most recent call first):
+[rank2]: frame #0: c10::Error::Error(c10::SourceLocation, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) + 0x80 (0x7f2bc9cc5b80 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libc10.so)
+[rank2]: frame #1: <unknown function> + 0x5f600c1 (0x7f2c0c0300c1 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #2: <unknown function> + 0x1499942 (0x7f2c07569942 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #3: c10d::TCPStore::doGet(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x33 (0x7f2c0c0cc043 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #4: c10d::TCPStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x114 (0x7f2c0c0cd154 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #5: c10d::PrefixStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x30 (0x7f2c0c077750 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #6: c10d::PrefixStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x30 (0x7f2c0c077750 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #7: c10d::PrefixStore::get(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) + 0x30 (0x7f2c0c077750 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #8: c10d::ProcessGroupNCCL::broadcastUniqueNCCLID(ncclUniqueId*, bool, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, int) + 0x5c4 (0x7f2bcac52014 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank2]: frame #9: c10d::ProcessGroupNCCL::initNCCLComm(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, c10::Device&, c10d::OpType, int, bool) + 0x1c1a (0x7f2bcac54b5a in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank2]: frame #10: <unknown function> + 0xe6533f (0x7f2bcac5933f in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank2]: frame #11: c10d::ProcessGroupNCCL::allreduce_impl(at::Tensor&, char const*, c10d::AllreduceOptions const&) + 0xc2 (0x7f2bcac59bb2 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank2]: frame #12: c10d::ProcessGroupNCCL::barrier(c10d::BarrierOptions const&) + 0x515 (0x7f2bcac68cb5 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cuda.so)
+[rank2]: frame #13: <unknown function> + 0x5f969c0 (0x7f2c0c0669c0 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #14: <unknown function> + 0x5fa450a (0x7f2c0c07450a in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #15: <unknown function> + 0x54e09e5 (0x7f2c0b5b09e5 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #16: <unknown function> + 0x5fb6574 (0x7f2c0c086574 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #17: <unknown function> + 0x5fb74f1 (0x7f2c0c0874f1 in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_cpu.so)
+[rank2]: frame #18: <unknown function> + 0xe0c0aa (0x7f2c1b8830aa in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_python.so)
+[rank2]: frame #19: <unknown function> + 0x3cc7bd (0x7f2c1ae437bd in /hpc/home/zy231/.local/lib/python3.11/site-packages/torch/lib/libtorch_python.so)
+[rank2]: frame #20: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x528187]
+[rank2]: frame #21: _PyObject_MakeTpCall + 0x27c (0x503a0c in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank2]: frame #22: _PyEval_EvalFrameDefault + 0x6a3 (0x510f33 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank2]: frame #23: _PyFunction_Vectorcall + 0x173 (0x538733 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank2]: frame #24: _PyEval_EvalFrameDefault + 0x4761 (0x514ff1 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank2]: frame #25: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5cb55a]
+[rank2]: frame #26: PyEval_EvalCode + 0x9f (0x5cac2f in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank2]: frame #27: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5ebcf7]
+[rank2]: frame #28: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5e7890]
+[rank2]: frame #29: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5fc832]
+[rank2]: frame #30: _PyRun_SimpleFileObject + 0x19f (0x5fbbff in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank2]: frame #31: _PyRun_AnyFileObject + 0x43 (0x5fb923 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank2]: frame #32: Py_RunMain + 0x2ee (0x5f65ce in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank2]: frame #33: Py_BytesMain + 0x39 (0x5bb3d9 in /opt/apps/rhel9/Anaconda3-2024.02/bin/python)
+[rank2]: frame #34: <unknown function> + 0x2a610 (0x7f2c4da2a610 in /lib64/libc.so.6)
+[rank2]: frame #35: __libc_start_main + 0x80 (0x7f2c4da2a6c0 in /lib64/libc.so.6)
+[rank2]: frame #36: /opt/apps/rhel9/Anaconda3-2024.02/bin/python() [0x5bb223]
+[rank2]: . This may indicate a possible application crash on rank 0 or a network set up issue.
+W0317 06:40:39.308000 305343 torch/distributed/elastic/multiprocessing/api.py:908] Sending process 305365 closing signal SIGTERM
+W0317 06:40:39.309000 305343 torch/distributed/elastic/multiprocessing/api.py:908] Sending process 305367 closing signal SIGTERM
+W0317 06:40:39.310000 305343 torch/distributed/elastic/multiprocessing/api.py:908] Sending process 305368 closing signal SIGTERM
+E0317 06:40:43.782000 305343 torch/distributed/elastic/multiprocessing/api.py:882] failed (exitcode: 1) local_rank: 1 (pid: 305366) of binary: /opt/apps/rhel9/Anaconda3-2024.02/bin/python
+Traceback (most recent call last):
+  File "/hpc/home/zy231/.local/bin/torchrun", line 8, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 357, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/run.py", line 936, in main
+    run(args)
+  File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/run.py", line 927, in run
+    elastic_launch(
+  File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 156, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/hpc/home/zy231/.local/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 293, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+data_processing.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2026-03-17_06:40:39
+  host      : dcc-core-ferc-s-z25-21.rc.duke.edu
+  rank      : 1 (local_rank: 1)
+  exitcode  : 1 (pid: 305366)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
+srun: error: dcc-core-ferc-s-z25-21: task 0: Exited with exit code 1

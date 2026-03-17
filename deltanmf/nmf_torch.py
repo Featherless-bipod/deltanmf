@@ -13,6 +13,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import euclidean_distances
 from tqdm.auto import trange
 import warnings
+from joblib import Parallel, delayed
 
 # Utility Functions
 def _torch_device(use_gpu=True):
@@ -155,6 +156,32 @@ def refit_H_given_W(
         del Xb
     return H_host
 
+def _run_single_nmf_replicate(X, k, epochs, batch_size, seed, return_H, device_override=None):
+    """Helper for parallel execution: Runs a single NMF replicate."""
+    use_gpu = device_override is not None and "cuda" in str(device_override)
+
+    if device_override is not None:
+        if "cuda" in str(device_override):
+            torch.cuda.set_device(device_override)
+        
+        # Monkey patch device resolution temporarily for the sub-process
+        def _local_device(*args, **kwargs):
+            return torch.device(device_override)
+        global _torch_device_backup
+        _torch_device_backup = globals().get('_torch_device')
+        globals()['_torch_device'] = _local_device
+
+    try:
+        W, H, _ = nmf_gpu_minibatch(
+            X, k=k, epochs=epochs, batch_size=batch_size,
+            seed=seed, use_gpu=use_gpu, return_H=return_H, verbose=False
+        )
+    finally:
+        if device_override is not None:
+            if _torch_device_backup is not None:
+                globals()['_torch_device'] = _torch_device_backup
+    return W
+
 def consensus_nmf_gpu(
     X, k, n_runs=20, epochs=40, batch_size=4096,
     use_gpu=True, seed=1337, verbose=False,
@@ -168,15 +195,55 @@ def consensus_nmf_gpu(
     """
     n_genes, n_cells = X.shape
     rng = np.random.default_rng(seed)
-    all_W_columns = []
+    
+    # Pre-generate seeds for the independent runs
+    run_seeds = [int(rng.integers(0, 2**31 - 1)) for _ in range(n_runs)]
 
-    iterator = trange(n_runs, desc="Consensus Runs") if verbose else range(n_runs)
-    for r in iterator:
-        run_seed = int(rng.integers(0, 2**31 - 1))
-        W, _, _ = nmf_gpu_minibatch(
-            X, k=k, epochs=epochs, batch_size=batch_size,
-            seed=run_seed, use_gpu=use_gpu, return_H=False, verbose=False
-        )
+    num_gpus = torch.cuda.device_count() if use_gpu and torch.cuda.is_available() else 0
+    
+    import os
+    is_ddp = "LOCAL_RANK" in os.environ
+    if is_ddp:
+        local_rank = int(os.environ["LOCAL_RANK"])
+        n_jobs = 1
+    else:
+        n_jobs = num_gpus if num_gpus > 1 else 1
+        local_rank = 0
+
+    if verbose:
+        if is_ddp:
+            print(f"DDP Mode: Running {n_runs} consensus replicates sequentially on GPU {local_rank}...")
+        else:
+            print(f"Starting {n_runs} consensus runs parallelized across {n_jobs} workers...")
+
+    import multiprocessing as mp
+    try:
+        mp.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass
+
+    if n_jobs > 1:
+        from joblib import parallel_config
+        with parallel_config(backend="multiprocessing"):
+            parallel_results = Parallel(n_jobs=n_jobs)(
+                delayed(_run_single_nmf_replicate)(
+                    X, k, epochs, batch_size, run_seeds[i], return_H=False,
+                    device_override=f"cuda:{i % num_gpus}"
+                )
+                for i in range(n_runs)
+            )
+    else:
+        # Sequential execution
+        parallel_results = [
+            _run_single_nmf_replicate(
+                X, k, epochs, batch_size, run_seeds[i], return_H=False,
+                device_override=f"cuda:{local_rank}" if use_gpu else "cpu"
+            )
+            for i in range(n_runs)
+        ]
+
+    all_W_columns = []
+    for W in parallel_results:
         all_W_columns.extend([W[:, j] for j in range(k)])
 
     # Quantile-based Density Filtering

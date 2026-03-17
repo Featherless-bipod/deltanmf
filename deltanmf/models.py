@@ -3,9 +3,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
 
 import pandas as pd
 from tqdm.auto import trange
+
+class NMFDataset(Dataset):
+    def __init__(self, X):
+        self.X = X
+        self.n_samples = X.shape[1]
+
+    def __len__(self):
+        return self.n_samples
+
+    def __getitem__(self, idx):
+        return self.X[:, idx], idx
 
 class NTCOptimizer(nn.Module):
     def __init__(self, m, k, init_W=None):
@@ -249,6 +261,18 @@ def solve_ntc_regularized_minibatch(
     else:
         def _act(t): return F.softplus(t, beta=softplus_beta)
 
+    dataloader = None
+    if not x_on_device:
+        dataset = NMFDataset(X_tensor_cpu)
+        dataloader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=2,
+            pin_memory=True,
+            prefetch_factor=2
+        )
+
     loss_history = []
     prev_loss = np.inf
     pbar = trange(max_iter, desc="Regularized NTC Discovery (minibatch)", leave=False)
@@ -265,19 +289,23 @@ def solve_ntc_regularized_minibatch(
         num_batches = 0
         alpha_updated = False
 
-        permutation = torch.randperm(n, device=device) if x_on_device else torch.randperm(n)
-        for start in range(0, n, batch_size):
+        if x_on_device:
+            permutation = torch.randperm(n, device=device)
+            def batch_generator():
+                for start in range(0, n, batch_size):
+                    gpu_idx = permutation[start:start+batch_size]
+                    yield X_tensor[:, gpu_idx], gpu_idx.cpu()
+            batch_iter = batch_generator()
+        else:
+            batch_iter = dataloader
+
+        for X_b, idx in batch_iter:
             optimizer.zero_grad()
 
-            idx = permutation[start:start + batch_size]
-            if x_on_device:
-                X_b = X_tensor[:, idx]
-                H_idx = idx
-                batch_n = idx.numel()
-            else:
-                X_b = X_tensor_cpu[:, idx].to(device, non_blocking=True)
-                H_idx = idx.to(device, non_blocking=True)
-                batch_n = idx.numel()
+            if not x_on_device:
+                X_b = X_b.to(device, non_blocking=True)
+
+            batch_n = idx.numel()
 
             # Local H Tensor Creation
             H_b_device = H_tensor_cpu[:, idx].clone().detach().to(device)
@@ -617,6 +645,18 @@ def solve_specific_with_fixed_ntc_hybrid(
     gamma    = float(hyperparameters.get("gamma", 0.0))
     eps = 1e-12
 
+    dataloader = None
+    if not x_on_device:
+        dataset = NMFDataset(X_tensor_cpu)
+        dataloader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=2,
+            pin_memory=True,
+            prefetch_factor=2
+        )
+
     loss_history = []
     prev_loss = np.inf
     pbar = trange(epochs, desc="Specific-with-Fixed-NTC (hybrid)", leave=False)
@@ -625,15 +665,21 @@ def solve_specific_with_fixed_ntc_hybrid(
         epoch_losses = {k: 0.0 for k in ['recon_loss', 'fm_loss', 'ortho_loss', 'total_loss']}
         num_batches = 0
 
-        permutation = torch.randperm(n_spec, device=device) if x_on_device else torch.randperm(n_spec)
-        for i in range(0, n_spec, batch_size):
+        if x_on_device:
+            permutation = torch.randperm(n_spec, device=device)
+            def batch_generator():
+                for i in range(0, n_spec, batch_size):
+                    gpu_idx = permutation[i:i+batch_size]
+                    yield X_tensor[:, gpu_idx], gpu_idx.cpu()
+            batch_iter = batch_generator()
+        else:
+            batch_iter = dataloader
+
+        for X_b, idx in batch_iter:
             optimizer.zero_grad()
 
-            idx = permutation[i:i+batch_size]
-            if x_on_device:
-                X_b = X_tensor[:, idx]
-            else:
-                X_b = X_tensor_cpu[:, idx].to(device, non_blocking=True)
+            if not x_on_device:
+                X_b = X_b.to(device, non_blocking=True)
                 
             # Local H Tensor Creation
             H_b_device = H_tensor_cpu[:, idx].clone().detach().to(device)
