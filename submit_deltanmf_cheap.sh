@@ -3,10 +3,10 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --partition=scavenger-gpu
-#SBATCH --gres=gpu:a6000:2
+#SBATCH --gres=gpu:a5000:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=24:00:00
+#SBATCH --time=120:00:00
 #SBATCH --output=nmf_ddp_%j.log
 
 # Load necessary modules (adjust to your cluster's specific module names)
@@ -26,7 +26,7 @@ echo "Starting DDP on $MASTER_ADDR:$MASTER_PORT"
 # Launch the script
 srun torchrun \
     --nnodes=$SLURM_NNODES \
-    --nproc_per_node=2 \
+    --nproc_per_node=1 \
     --rdzv_id=$SLURM_JOB_ID \
     --rdzv_backend=c10d \
     --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \

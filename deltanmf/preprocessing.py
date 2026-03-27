@@ -123,6 +123,26 @@ def load_data_onestage(X, gene_names, s_e_path, s_e_genes_path, min_cells=215, a
     S_E_aligned = S_E_full[np.ix_(se_indices, se_indices)]
     
     return X_aligned, S_E_aligned, np.asarray(final_genes, dtype=object)
+
+def load_data_twostage_no_se(X_control, X_case, gene_names, min_cells=215, additional_genes_to_remove=None, verbose=False):
+    X_ntc_full = X_control
+    X_specific_full = X_case
+    hvg_gene_names_full = np.asarray(gene_names)
+    mask = _build_gene_filter_mask(
+        X_ntc=X_ntc_full,
+        X_specific=X_specific_full,
+        gene_names_full=hvg_gene_names_full,
+        min_cells=min_cells,
+        additional_genes_to_remove=additional_genes_to_remove,
+    )
+
+    # apply mask once to keep everything aligned
+    X_ntc = X_ntc_full[mask, :]
+    X_specific = X_specific_full[mask, :]
+    
+    final_genes = hvg_gene_names_full[mask].astype(object, copy=False)
+    
+    return X_ntc, X_specific, final_genes
     
 def load_data_twostage(X_control, X_case, gene_names, s_e_path, s_e_genes_path, min_cells=215, additional_genes_to_remove=None, verbose=False):
     X_ntc_full = X_control

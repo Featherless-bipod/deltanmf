@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=delta_nmf_ddp
+#SBATCH --job-name=delta_nmf_common
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --partition=scavenger-gpu
-#SBATCH --gres=gpu:a6000:2
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
+#SBATCH --partition=gpu-common
+#SBATCH --gres=gpu:5000_ada:1
+#SBATCH --cpus-per-task=11
+#SBATCH --mem=115G
 #SBATCH --time=24:00:00
-#SBATCH --output=nmf_ddp_%j.log
+#SBATCH --output=nmf_common_%j.log
 
 # Load necessary modules (adjust to your cluster's specific module names)
 source /hpc/group/gersbachlab/zy231/miniconda/etc/profile.d/conda.sh
@@ -26,7 +26,7 @@ echo "Starting DDP on $MASTER_ADDR:$MASTER_PORT"
 # Launch the script
 srun torchrun \
     --nnodes=$SLURM_NNODES \
-    --nproc_per_node=2 \
+    --nproc_per_node=1 \
     --rdzv_id=$SLURM_JOB_ID \
     --rdzv_backend=c10d \
     --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \

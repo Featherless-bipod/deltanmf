@@ -30,10 +30,11 @@ def h5ad_to_npy(
     X_ntc = X[mask_ntc, :]
     X_spec = X[mask_spec, :] if mask_spec is not None else None
 
-    if hasattr(X_ntc, "toarray"):
-        X_ntc = X_ntc.toarray()
-    if X_spec is not None and hasattr(X_spec, "toarray"):
-        X_spec = X_spec.toarray()
+    # We keep them sparse to avoid OOM
+    # if hasattr(X_ntc, "toarray"):
+    #     X_ntc = X_ntc.toarray()
+    # if X_spec is not None and hasattr(X_spec, "toarray"):
+    #     X_spec = X_spec.toarray()
 
     gene_names = np.asarray(adata.var_names).astype(str)
 
